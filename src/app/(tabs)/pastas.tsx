@@ -63,12 +63,25 @@ export default function PastasScreen() {
     return (
       <Pressable
         style={styles.card}
-        onPress={() => {
-          // depois vamos abrir a pasta
-          console.log("Abrir pasta:", item.id);
-        }}
+        onPress={() => router.push({
+          pathname: "/pasta/[id]",
+          params: { id: item.id },
+        })}
       >
-        <Text style={styles.cardTitle}>{item.nome}</Text>
+        <View style={styles.cardContent}>
+          <View style={styles.folderIcon}>
+            <Text style={styles.folderIconText}>📁</Text>
+          </View>
+
+          <View style={styles.cardInfo}>
+            <Text style={styles.cardTitle}>{item.nome}</Text>
+            <Text style={styles.cardSubtitle}>
+              Toque para abrir esta pasta
+            </Text>
+          </View>
+
+          <Text style={styles.chevron}>›</Text>
+        </View>
       </Pressable>
     );
   }
@@ -95,14 +108,14 @@ export default function PastasScreen() {
         <ActivityIndicator
           size="large"
           color={colors.primary}
-          style={{ marginTop: 20 }}
+          style={styles.loader}
         />
       ) : (
         <FlatList
           data={pastas}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
               Nenhuma pasta criada ainda.
@@ -129,6 +142,7 @@ const styles = StyleSheet.create({
   subtitle: {
     color: colors.textMuted,
     fontSize: 14,
+    marginTop: 2,
   },
   addButton: {
     backgroundColor: colors.primary,
@@ -140,6 +154,12 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: "700",
   },
+  loader: {
+    marginTop: 20,
+  },
+  listContent: {
+    paddingBottom: 40,
+  },
   card: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -148,10 +168,42 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
   },
+  cardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  folderIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  folderIconText: {
+    fontSize: 20,
+  },
+  cardInfo: {
+    flex: 1,
+  },
   cardTitle: {
     color: colors.text,
     fontSize: 16,
     fontWeight: "700",
+  },
+  cardSubtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  chevron: {
+    color: colors.textMuted,
+    fontSize: 26,
+    fontWeight: "400",
+    marginLeft: 8,
   },
   emptyText: {
     color: colors.textMuted,

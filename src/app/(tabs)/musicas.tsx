@@ -1,19 +1,24 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import {
   collection,
+  deleteDoc,
+  doc,
   getDocs,
   orderBy,
   query,
-  Timestamp,
+  updateDoc,
 } from "firebase/firestore";
 import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
@@ -24,60 +29,132 @@ type Musica = {
   titulo: string;
   artista?: string;
   tom?: string;
-  cifra?: string;
-  createdAt?: Timestamp;
+  pastaId?: string | null;
+};
+
+type Pasta = {
+  id: string;
+  nome: string;
 };
 
 export default function MusicasScreen() {
   const [musicas, setMusicas] = useState<Musica[]>([]);
+  const [pastas, setPastas] = useState<Pasta[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function loadMusicas() {
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [musicaSelecionada, setMusicaSelecionada] =
+    useState<Musica | null>(null);
+
+  async function loadData() {
     try {
       setLoading(true);
 
-      const ref = collection(db, "musicas");
-      const q = query(ref, orderBy("titulo", "asc"));
-      const snapshot = await getDocs(q);
+      const [musicasSnap, pastasSnap] = await Promise.all([
+        getDocs(query(collection(db, "musicas"), orderBy("titulo", "asc"))),
+        getDocs(query(collection(db, "pastas"), orderBy("nome", "asc"))),
+      ]);
 
-      const lista: Musica[] = snapshot.docs.map((doc) => {
-        const data = doc.data();
+      setMusicas(
+        musicasSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as Musica[]
+      );
 
-        return {
-          id: doc.id,
-          titulo: data.titulo ?? "",
-          artista: data.artista ?? "",
-          tom: data.tom ?? "",
-          cifra: data.cifra ?? "",
-          createdAt: data.createdAt,
-        };
-      });
-
-      setMusicas(lista);
-    } catch (error) {
-      console.log("Erro ao buscar músicas:", error);
+      setPastas(
+        pastasSnap.docs.map((d) => ({
+          id: d.id,
+          nome: d.data().nome,
+        }))
+      );
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadMusicas();
+    loadData();
   }, []);
+
+  function getNomeDaPasta(id?: string | null) {
+    if (!id) return "Sem pasta";
+    return pastas.find((p) => p.id === id)?.nome ?? "Sem pasta";
+  }
+
+  function abrirMenu(musica: Musica) {
+    setMusicaSelecionada(musica);
+    setMenuVisible(true);
+  }
+
+  function fecharMenu() {
+    setMenuVisible(false);
+  }
+
+  async function selecionarPasta(pastaId: string | null) {
+    if (!musicaSelecionada) return;
+
+    await updateDoc(doc(db, "musicas", musicaSelecionada.id), {
+      pastaId,
+    });
+
+    await loadData();
+    setMenuVisible(false);
+  }
+
+  async function excluirMusica() {
+    if (!musicaSelecionada) return;
+
+    Alert.alert(
+      "Excluir música",
+      `Deseja excluir "${musicaSelecionada.titulo}"?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Excluir",
+          style: "destructive",
+          onPress: async () => {
+            await deleteDoc(doc(db, "musicas", musicaSelecionada.id));
+            await loadData();
+            setMenuVisible(false);
+          },
+        },
+      ]
+    );
+  }
 
   function renderItem({ item }: { item: Musica }) {
     return (
       <Pressable
         style={styles.card}
-        onPress={() => router.push(`/musica/${item.id}`)}
+        onPress={() =>
+          router.push({
+            pathname: "/musica/[id]",
+            params: { id: item.id },
+          })
+        }
       >
-        <Text style={styles.cardTitle}>{item.titulo}</Text>
+        <View style={styles.row}>
+          <View style={styles.cardInfo}>
+            <Text style={styles.title}>{item.titulo}</Text>
 
-        {!!item.artista && (
-          <Text style={styles.cardSubtitle}>{item.artista}</Text>
-        )}
+            {!!item.artista && (
+              <Text style={styles.subtitle}>{item.artista}</Text>
+            )}
 
-        {!!item.tom && <Text style={styles.cardMeta}>Tom: {item.tom}</Text>}
+            <Text style={styles.meta}>
+              {item.tom ? `Tom: ${item.tom}` : ""} •{" "}
+              {getNomeDaPasta(item.pastaId)}
+            </Text>
+          </View>
+
+          <Pressable
+            style={styles.menuButton}
+            onPress={() => abrirMenu(item)}
+          >
+            <Ionicons name="menu" size={20} color={colors.textMuted} />
+          </Pressable>
+        </View>
       </Pressable>
     );
   }
@@ -86,9 +163,9 @@ export default function MusicasScreen() {
     <ScreenContainer>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Músicas</Text>
-          <Text style={styles.subtitle}>
-            Toque em uma música para abrir a cifra.
+          <Text style={styles.screenTitle}>Músicas</Text>
+          <Text style={styles.screenSubtitle}>
+            Toque em uma música para abrir a cifra
           </Text>
         </View>
 
@@ -101,15 +178,11 @@ export default function MusicasScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator
-          size="large"
-          color={colors.primary}
-          style={styles.loader}
-        />
+        <ActivityIndicator color={colors.primary} />
       ) : (
         <FlatList
           data={musicas}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(i) => i.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
@@ -119,6 +192,64 @@ export default function MusicasScreen() {
           }
         />
       )}
+
+      <Modal
+        transparent
+        visible={menuVisible}
+        animationType="slide"
+        onRequestClose={fecharMenu}
+      >
+        <Pressable style={styles.overlay} onPress={fecharMenu}>
+          <Pressable style={styles.bottomSheet} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+
+            <Text style={styles.modalTitle}>{musicaSelecionada?.titulo}</Text>
+
+            <Text style={styles.modalSubtitle}>Escolha a pasta</Text>
+
+            <Text style={styles.currentFolder}>
+              Atual: {getNomeDaPasta(musicaSelecionada?.pastaId)}
+            </Text>
+
+            <Pressable
+              style={styles.option}
+              onPress={() => selecionarPasta(null)}
+            >
+              <Text style={styles.optionText}>Sem pasta</Text>
+            </Pressable>
+
+            {pastas.map((pasta) => {
+              const isSelected = pasta.id === musicaSelecionada?.pastaId;
+
+              return (
+                <Pressable
+                  key={pasta.id}
+                  style={[
+                    styles.option,
+                    isSelected && styles.optionSelected,
+                  ]}
+                  onPress={() => selecionarPasta(pasta.id)}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      isSelected && styles.optionTextSelected,
+                    ]}
+                  >
+                    {pasta.nome}
+                  </Text>
+                </Pressable>
+              );
+            })}
+
+            <View style={styles.divider} />
+
+            <Pressable style={styles.deleteButton} onPress={excluirMusica}>
+              <Text style={styles.deleteButtonText}>Excluir música</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -130,15 +261,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
   },
-  title: {
-    color: colors.text,
-    fontSize: 24,
+  screenTitle: {
+    fontSize: 22,
     fontWeight: "800",
+    color: colors.text,
   },
-  subtitle: {
+  screenSubtitle: {
+    fontSize: 13,
     color: colors.textMuted,
-    fontSize: 14,
-    marginTop: 2,
+    marginTop: 4,
   },
   addButton: {
     backgroundColor: colors.primary,
@@ -147,41 +278,121 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   addButtonText: {
-    color: colors.white,
+    color: "#FFFFFF",
     fontWeight: "700",
-  },
-  loader: {
-    marginTop: 20,
   },
   listContent: {
-    paddingBottom: 40,
-  },
-  card: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  cardSubtitle: {
-    color: colors.textMuted,
-    fontSize: 14,
-    marginTop: 2,
-  },
-  cardMeta: {
-    color: colors.primary,
-    fontSize: 13,
-    marginTop: 6,
+    paddingBottom: 32,
   },
   emptyText: {
     color: colors.textMuted,
     textAlign: "center",
     marginTop: 40,
+  },
+  card: {
+    backgroundColor: colors.card,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  title: {
+    fontWeight: "700",
+    fontSize: 16,
+    color: colors.text,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  meta: {
+    fontSize: 12,
+    color: colors.primary,
+    marginTop: 4,
+  },
+  menuButton: {
+    backgroundColor: colors.surface,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: "#00000088",
+    justifyContent: "flex-end",
+  },
+  bottomSheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 28,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 46,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: colors.textMuted,
+    opacity: 0.5,
+    marginBottom: 14,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 6,
+    color: "#FFFFFF",
+  },
+  modalSubtitle: {
+    color: "#FFFFFF",
+    marginBottom: 10,
+  },
+  currentFolder: {
+    marginBottom: 12,
+    fontSize: 13,
+    color: "#FFFFFF",
+  },
+  option: {
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    marginBottom: 8,
+  },
+  optionSelected: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  optionText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+  },
+  optionTextSelected: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 10,
+  },
+  deleteButton: {
+    backgroundColor: "#B42318",
+    padding: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  deleteButtonText: {
+    color: "#FFF",
+    fontWeight: "700",
   },
 });

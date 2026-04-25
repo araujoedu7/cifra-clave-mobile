@@ -1,16 +1,21 @@
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
+import { useAlert } from "@/src/contexts/AlertContext";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function PerfilScreen() {
   const { appUser, logout } = useAuth();
+  const alert = useAlert();
 
   async function handleLogout() {
     try {
       await logout();
     } catch {
-      Alert.alert("Erro", "Não foi possível sair da conta.");
+      alert.showAlert({
+        title: "Erro",
+        message: "Não foi possível sair da conta.",
+      });
     }
   }
 

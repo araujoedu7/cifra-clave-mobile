@@ -1,18 +1,19 @@
+import { useAlert } from "@/src/contexts/AlertContext";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-  Alert,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
-import { useRouter } from "expo-router";
-import { useAuth } from "@/src/contexts/AuthContext";
 
 export default function RegisterScreen() {
   const router = useRouter();
   const { signUp } = useAuth();
+  const alert = useAlert();
 
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
@@ -21,7 +22,10 @@ export default function RegisterScreen() {
 
   async function handleRegister() {
     if (!nome || !email || !senha) {
-      Alert.alert("Erro", "Preencha todos os campos.");
+      alert.showAlert({
+        title: "Erro",
+        message: "Preencha todos os campos.",
+      });
       return;
     }
 
@@ -34,15 +38,18 @@ export default function RegisterScreen() {
         senha,
       });
 
-      Alert.alert("Sucesso", "Conta criada com sucesso!");
+      alert.showAlert({
+        title: "Sucesso",
+        message: "Conta criada com sucesso!",
+      });
       router.replace("/"); // volta pra home
     } catch (error: any) {
       console.log(error);
 
-      Alert.alert(
-        "Erro ao cadastrar",
-        error?.message ?? "Tente novamente."
-      );
+      alert.showAlert({
+        title: "Erro ao cadastrar",
+        message: error?.message ?? "Tente novamente.",
+      });
     } finally {
       setLoading(false);
     }

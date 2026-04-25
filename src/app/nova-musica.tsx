@@ -1,22 +1,22 @@
-import { useState } from "react";
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { router } from "expo-router";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
-import { db } from "@/src/firebase/config";
+import { useAlert } from "@/src/contexts/AlertContext";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { db } from "@/src/firebase/config";
+import { router } from "expo-router";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { useState } from "react";
+import {
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput
+} from "react-native";
 
 export default function NovaMusicaScreen() {
   const { appUser } = useAuth();
+  const alert = useAlert();
 
   const [titulo, setTitulo] = useState("");
   const [artista, setArtista] = useState("");
@@ -26,7 +26,10 @@ export default function NovaMusicaScreen() {
 
   async function handleCreateMusica() {
     if (!titulo.trim() || !cifra.trim()) {
-      Alert.alert("Erro", "Preencha pelo menos título e cifra.");
+      alert.showAlert({
+        title: "Erro",
+        message: "Preencha pelo menos título e cifra.",
+      });
       return;
     }
 
@@ -42,11 +45,17 @@ export default function NovaMusicaScreen() {
         createdAt: serverTimestamp(),
       });
 
-      Alert.alert("Sucesso", "Música criada com sucesso!");
+      alert.showAlert({
+        title: "Sucesso",
+        message: "Música criada com sucesso!",
+      });
       router.back();
     } catch (error: any) {
       console.log(error);
-      Alert.alert("Erro", "Não foi possível criar a música.");
+      alert.showAlert({
+        title: "Erro",
+        message: "Não foi possível criar a música.",
+      });
     } finally {
       setLoading(false);
     }

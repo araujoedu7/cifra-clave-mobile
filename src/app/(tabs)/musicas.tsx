@@ -1,28 +1,28 @@
-import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  orderBy,
-  query,
-  updateDoc,
-} from "firebase/firestore";
 import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
+import { useAlert } from "@/src/contexts/AlertContext";
 import { db } from "@/src/firebase/config";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
+import {
+    collection,
+    deleteDoc,
+    doc,
+    getDocs,
+    orderBy,
+    query,
+    updateDoc,
+} from "firebase/firestore";
+import { useCallback, useState } from "react";
+import {
+    ActivityIndicator,
+    FlatList,
+    Modal,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
+} from "react-native";
 
 type Musica = {
   id: string;
@@ -41,12 +41,13 @@ export default function MusicasScreen() {
   const [musicas, setMusicas] = useState<Musica[]>([]);
   const [pastas, setPastas] = useState<Pasta[]>([]);
   const [loading, setLoading] = useState(true);
+  const alert = useAlert();
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [musicaSelecionada, setMusicaSelecionada] =
     useState<Musica | null>(null);
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -71,11 +72,13 @@ export default function MusicasScreen() {
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    loadData();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   function getNomeDaPasta(id?: string | null) {
     if (!id) return "Sem pasta";
@@ -105,10 +108,10 @@ export default function MusicasScreen() {
   async function excluirMusica() {
     if (!musicaSelecionada) return;
 
-    Alert.alert(
-      "Excluir música",
-      `Deseja excluir "${musicaSelecionada.titulo}"?`,
-      [
+    alert.showAlert({
+      title: "Excluir música",
+      message: `Deseja excluir "${musicaSelecionada.titulo}"?`,
+      buttons: [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Excluir",
@@ -119,8 +122,8 @@ export default function MusicasScreen() {
             setMenuVisible(false);
           },
         },
-      ]
-    );
+      ],
+    });
   }
 
   function renderItem({ item }: { item: Musica }) {

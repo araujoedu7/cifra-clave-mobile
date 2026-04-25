@@ -1,27 +1,27 @@
-import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
 import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
+import { useAlert } from "@/src/contexts/AlertContext";
 import { db } from "@/src/firebase/config";
+import { router, useLocalSearchParams } from "expo-router";
+import {
+    collection,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    query,
+    updateDoc,
+    where,
+} from "firebase/firestore";
+import { useEffect, useState } from "react";
+import {
+    ActivityIndicator,
+    FlatList,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
+} from "react-native";
 
 type Musica = {
   id: string;
@@ -43,6 +43,7 @@ export default function PastaDetalheScreen() {
   const [musicas, setMusicas] = useState<Musica[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const alert = useAlert();
 
   async function loadPasta() {
     if (!id) return;
@@ -115,25 +116,28 @@ export default function PastaDetalheScreen() {
       await loadMusicas();
     } catch (error) {
       console.log("Erro ao remover música da pasta:", error);
-      Alert.alert("Erro", "Não foi possível remover a música da pasta.");
+      alert.showAlert({
+        title: "Erro",
+        message: "Não foi possível remover a música da pasta.",
+      });
     } finally {
       setActionLoadingId(null);
     }
   }
 
   function confirmarRemoverDaPasta(musica: Musica) {
-    Alert.alert(
-      "Remover da pasta",
-      `Deseja remover "${musica.titulo}" desta pasta?`,
-      [
+    alert.showAlert({
+      title: "Remover da pasta",
+      message: `Deseja remover "${musica.titulo}" desta pasta?`,
+      buttons: [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Remover",
           style: "destructive",
           onPress: () => removerDaPasta(musica.id),
         },
-      ]
-    );
+      ],
+    });
   }
 
   async function excluirMusica(musicaId: string) {
@@ -144,25 +148,28 @@ export default function PastaDetalheScreen() {
       await loadMusicas();
     } catch (error) {
       console.log("Erro ao excluir música:", error);
-      Alert.alert("Erro", "Não foi possível excluir a música.");
+      alert.showAlert({
+        title: "Erro",
+        message: "Não foi possível excluir a música.",
+      });
     } finally {
       setActionLoadingId(null);
     }
   }
 
   function confirmarExcluirMusica(musica: Musica) {
-    Alert.alert(
-      "Excluir música",
-      `Deseja excluir "${musica.titulo}"? Essa ação não poderá ser desfeita.`,
-      [
+    alert.showAlert({
+      title: "Excluir música",
+      message: `Deseja excluir "${musica.titulo}"? Essa ação não poderá ser desfeita.`,
+      buttons: [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Excluir",
           style: "destructive",
           onPress: () => excluirMusica(musica.id),
         },
-      ]
-    );
+      ],
+    });
   }
 
   function renderItem({ item }: { item: Musica }) {

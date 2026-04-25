@@ -2,8 +2,8 @@ import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
 import { useAlert } from "@/src/contexts/AlertContext";
 import { db } from "@/src/firebase/config";
-import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
 import {
     collection,
     deleteDoc,

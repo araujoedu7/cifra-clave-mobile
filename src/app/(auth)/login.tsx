@@ -1,21 +1,22 @@
-import { useState } from "react";
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { router } from "expo-router";
 import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
+import { useAlert } from "@/src/contexts/AlertContext";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { router } from "expo-router";
+import { useState } from "react";
+import {
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+} from "react-native";
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
+  const alert = useAlert();
 
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -23,7 +24,10 @@ export default function LoginScreen() {
 
   async function handleLogin() {
     if (!email.trim() || !senha.trim()) {
-      Alert.alert("Atenção", "Preencha e-mail e senha.");
+      alert.showAlert({
+        title: "Atenção",
+        message: "Preencha e-mail e senha.",
+      });
       return;
     }
 
@@ -32,7 +36,10 @@ export default function LoginScreen() {
       await signIn(email, senha);
       router.replace("/(tabs)");
     } catch (error: any) {
-      Alert.alert("Erro ao entrar", error?.message ?? "Falha no login.");
+      alert.showAlert({
+        title: "Erro ao entrar",
+        message: error?.message ?? "Falha no login.",
+      });
     } finally {
       setLoading(false);
     }

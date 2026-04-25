@@ -1,7 +1,8 @@
+import { colors } from "@/src/constants/colors";
+import { AlertProvider } from "@/src/contexts/AlertContext";
+import { AuthProvider, useAuth } from "@/src/contexts/AuthContext";
 import { Stack } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
-import { AuthProvider, useAuth } from "@/src/contexts/AuthContext";
-import { colors } from "@/src/constants/colors";
 
 function RootNavigator() {
   const { loading, firebaseUser } = useAuth();
@@ -34,8 +35,10 @@ function RootNavigator() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootNavigator />
-    </AuthProvider>
+    <AlertProvider>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
+    </AlertProvider>
   );
 }

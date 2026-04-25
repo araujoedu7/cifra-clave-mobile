@@ -1,28 +1,32 @@
+import ScreenContainer from "@/src/components/ScreenContainer";
+import { colors } from "@/src/constants/colors";
+import { useAlert } from "@/src/contexts/AlertContext";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { db } from "@/src/firebase/config";
+import { router } from "expo-router";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useState } from "react";
 import {
-  Alert,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { router } from "expo-router";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import ScreenContainer from "@/src/components/ScreenContainer";
-import { colors } from "@/src/constants/colors";
-import { db } from "@/src/firebase/config";
-import { useAuth } from "@/src/contexts/AuthContext";
 
 export default function NovaPastaScreen() {
   const { appUser } = useAuth();
+  const alert = useAlert();
 
   const [nome, setNome] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleCreatePasta() {
     if (!nome.trim()) {
-      Alert.alert("Erro", "Digite o nome da pasta.");
+      alert.showAlert({
+        title: "Erro",
+        message: "Digite o nome da pasta.",
+      });
       return;
     }
 
@@ -35,11 +39,17 @@ export default function NovaPastaScreen() {
         createdAt: serverTimestamp(),
       });
 
-      Alert.alert("Sucesso", "Pasta criada com sucesso!");
+      alert.showAlert({
+        title: "Sucesso",
+        message: "Pasta criada com sucesso!",
+      });
       router.back();
     } catch (error: any) {
       console.log(error);
-      Alert.alert("Erro", "Não foi possível criar a pasta.");
+      alert.showAlert({
+        title: "Erro",
+        message: "Não foi possível criar a pasta.",
+      });
     } finally {
       setLoading(false);
     }

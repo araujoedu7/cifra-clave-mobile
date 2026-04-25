@@ -5,25 +5,26 @@ import { db } from "@/src/firebase/config";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDocs,
-    orderBy,
-    query,
-    updateDoc,
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  orderBy,
+  query,
+  updateDoc,
 } from "firebase/firestore";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type GestureResponderEvent,
 } from "react-native";
 
 type Musica = {
@@ -31,12 +32,41 @@ type Musica = {
   titulo: string;
   artista?: string;
   tom?: string;
+  cifra?: string;
   pastaId?: string | null;
+  createdBy?: string;
+  createdAt?: Date;
 };
 
 type Pasta = {
   id: string;
   nome: string;
+};
+
+type SearchResult = {
+  artist: string;
+  title: string;
+  collection?: string;
+  preview?: string;
+  lyrics?: string;
+  trackId?: number;
+  isSpecificSong: boolean;
+};
+
+type LyricsResponse = {
+  lyrics?: string;
+  error?: string;
+};
+
+type ITunesSong = {
+  artistName?: string;
+  trackName?: string;
+  collectionName?: string;
+  trackId?: number;
+};
+
+type ITunesResponse = {
+  results?: ITunesSong[];
 };
 
 export default function MusicasScreen() {
@@ -46,22 +76,29 @@ export default function MusicasScreen() {
   const alert = useAlert();
 
   const [menuVisible, setMenuVisible] = useState(false);
-  const [musicaSelecionada, setMusicaSelecionada] =
-    useState<Musica | null>(null);
+  const [musicaSelecionada, setMusicaSelecionada] = useState<Musica | null>(
+    null
+  );
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchModalVisible, setSearchModalVisible] = useState(false);
-  const [selectedArtist, setSelectedArtist] = useState<string>("");
+  const [selectedArtist, setSelectedArtist] = useState("");
   const [filterQuery, setFilterQuery] = useState("");
 
-  const filteredMusicas = musicas.filter(musica => {
-    if (!filterQuery.trim()) return true;
-    const query = filterQuery.toLowerCase();
-    return musica.titulo.toLowerCase().includes(query) || 
-           (musica.artista && musica.artista.toLowerCase().includes(query));
-  });
+  const filteredMusicas = useMemo(() => {
+    const queryText = filterQuery.trim().toLowerCase();
+
+    if (!queryText) return musicas;
+
+    return musicas.filter((musica) => {
+      const titulo = musica.titulo?.toLowerCase() ?? "";
+      const artista = musica.artista?.toLowerCase() ?? "";
+
+      return titulo.includes(queryText) || artista.includes(queryText);
+    });
+  }, [filterQuery, musicas]);
 
   const loadData = useCallback(async () => {
     try {
@@ -72,23 +109,42 @@ export default function MusicasScreen() {
         getDocs(query(collection(db, "pastas"), orderBy("nome", "asc"))),
       ]);
 
-      setMusicas(
-        musicasSnap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        })) as Musica[]
-      );
+      const musicasData: Musica[] = musicasSnap.docs.map((documento) => {
+        const data = documento.data();
 
-      setPastas(
-        pastasSnap.docs.map((d) => ({
-          id: d.id,
-          nome: d.data().nome,
-        }))
-      );
+        return {
+          id: documento.id,
+          titulo: String(data.titulo ?? "Sem título"),
+          artista: data.artista ? String(data.artista) : undefined,
+          tom: data.tom ? String(data.tom) : undefined,
+          cifra: data.cifra ? String(data.cifra) : undefined,
+          pastaId: data.pastaId ?? null,
+          createdBy: data.createdBy ? String(data.createdBy) : undefined,
+          createdAt: data.createdAt?.toDate?.() ?? data.createdAt,
+        };
+      });
+
+      const pastasData: Pasta[] = pastasSnap.docs.map((documento) => {
+        const data = documento.data();
+
+        return {
+          id: documento.id,
+          nome: String(data.nome ?? "Sem nome"),
+        };
+      });
+
+      setMusicas(musicasData);
+      setPastas(pastasData);
+    } catch (error) {
+      console.log("Erro ao carregar dados:", error);
+      alert.showAlert({
+        title: "Erro",
+        message: "Não foi possível carregar as músicas.",
+      });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [alert]);
 
   useFocusEffect(
     useCallback(() => {
@@ -96,8 +152,30 @@ export default function MusicasScreen() {
     }, [loadData])
   );
 
+  async function fetchJson<T>(url: string): Promise<T> {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Erro na requisição: ${response.status}`);
+    }
+
+    return response.json() as Promise<T>;
+  }
+
+  async function buscarLetra(artist: string, title: string) {
+    const data = await fetchJson<LyricsResponse>(
+      `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(
+        title
+      )}`
+    );
+
+    return data.lyrics?.trim() || null;
+  }
+
   async function buscarMusica() {
-    if (!searchQuery.trim()) {
+    const textoBusca = searchQuery.trim();
+
+    if (!textoBusca) {
       alert.showAlert({
         title: "Atenção",
         message: "Digite o nome da música ou artista.",
@@ -107,103 +185,117 @@ export default function MusicasScreen() {
 
     setSearchLoading(true);
     setSelectedArtist("");
+    setSearchResults([]);
+
     try {
       let artist = "";
-      let title = searchQuery.trim();
+      let title = textoBusca;
 
-      // Se tem " - ", separa artista e título
-      if (searchQuery.includes(" - ")) {
-        const parts = searchQuery.split(" - ");
-        artist = parts[0]?.trim() || "";
-        title = parts[1]?.trim() || "";
+      if (textoBusca.includes(" - ")) {
+        const [artistPart, ...titleParts] = textoBusca.split(" - ");
+        artist = artistPart.trim();
+        title = titleParts.join(" - ").trim();
       }
 
       if (artist && title) {
-        // Busca música específica
-        const response = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
-        const data = await response.json();
+        const lyrics = await buscarLetra(artist, title);
 
-        if (data.lyrics) {
-          const previewLyrics = data.lyrics.split('\n').slice(0, 4).join('\n');
-          setSearchResults([{
-            artist,
-            title,
-            lyrics: data.lyrics,
-            preview: previewLyrics,
-            isSpecificSong: true,
-          }]);
-          setSearchModalVisible(true);
-        } else {
+        if (!lyrics) {
           alert.showAlert({
             title: "Não encontrado",
             message: "Música não encontrada. Tente outro artista/título.",
           });
+          return;
         }
-      } else {
-        // Busca por artista - lista de músicas
-        setSelectedArtist(title); // title aqui é o artista
-        const response = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(title)}&entity=song&limit=50`);
-        const data = await response.json();
 
-        if (data.results && data.results.length > 0) {
-          const songs = data.results.map((song: any) => ({
-            artist: song.artistName,
-            title: song.trackName,
-            collection: song.collectionName,
-            preview: `Álbum: ${song.collectionName}`,
-            trackId: song.trackId,
-            isSpecificSong: false,
-          }));
-          setSearchResults(songs);
-          setSearchModalVisible(true);
-        } else {
-          alert.showAlert({
-            title: "Não encontrado",
-            message: "Nenhuma música encontrada para este artista.",
-          });
-        }
+        const previewLyrics = lyrics.split("\n").slice(0, 4).join("\n");
+
+        setSearchResults([
+          {
+            artist,
+            title,
+            lyrics,
+            preview: previewLyrics,
+            isSpecificSong: true,
+          },
+        ]);
+        setSearchModalVisible(true);
+        return;
       }
+
+      setSelectedArtist(title);
+
+      const data = await fetchJson<ITunesResponse>(
+        `https://itunes.apple.com/search?term=${encodeURIComponent(
+          title
+        )}&entity=song&limit=50`
+      );
+
+      const songs: SearchResult[] =
+        data.results
+          ?.filter((song) => song.artistName && song.trackName)
+          .map((song, index) => ({
+            artist: String(song.artistName),
+            title: String(song.trackName),
+            collection: song.collectionName,
+            preview: song.collectionName
+              ? `Álbum: ${song.collectionName}`
+              : "Álbum não informado",
+            trackId: song.trackId ?? index,
+            isSpecificSong: false,
+          })) ?? [];
+
+      if (songs.length === 0) {
+        alert.showAlert({
+          title: "Não encontrado",
+          message: "Nenhuma música encontrada para este artista.",
+        });
+        return;
+      }
+
+      setSearchResults(songs);
+      setSearchModalVisible(true);
     } catch (error) {
       console.log("Erro ao buscar música:", error);
       alert.showAlert({
         title: "Erro",
-        message: "Não foi possível buscar a música.",
+        message: "Não foi possível buscar a música. Tente novamente.",
       });
     } finally {
       setSearchLoading(false);
     }
   }
 
-  async function adicionarMusica(musica: any) {
+  async function adicionarMusica(musica: SearchResult) {
     try {
-      let lyrics = musica.lyrics;
+      setSearchLoading(true);
 
-      // Se não tem letra (veio da busca por artista), buscar agora
+      let lyrics = musica.lyrics?.trim() || null;
+
       if (!lyrics) {
-        setSearchLoading(true);
         try {
-          const response = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(musica.artist)}/${encodeURIComponent(musica.title)}`);
-          const data = await response.json();
-          lyrics = data.lyrics || "Letra não encontrada";
+          lyrics = await buscarLetra(musica.artist, musica.title);
         } catch (error) {
           console.log("Erro ao buscar letra:", error);
-          lyrics = "Letra não encontrada";
-        } finally {
-          setSearchLoading(false);
         }
       }
 
       await addDoc(collection(db, "musicas"), {
         titulo: musica.title,
         artista: musica.artist,
-        cifra: lyrics,
+        cifra: lyrics || "Letra não encontrada",
+        pastaId: null,
         createdBy: "user",
         createdAt: new Date(),
       });
+
       setSearchModalVisible(false);
       setSearchQuery("");
       setSearchResults([]);
+      setSelectedArtist("");
+
       await loadData();
+
       alert.showAlert({
         title: "Sucesso",
         message: "Música adicionada com sucesso!",
@@ -214,12 +306,14 @@ export default function MusicasScreen() {
         title: "Erro",
         message: "Não foi possível adicionar a música.",
       });
+    } finally {
+      setSearchLoading(false);
     }
   }
 
   function getNomeDaPasta(id?: string | null) {
     if (!id) return "Sem pasta";
-    return pastas.find((p) => p.id === id)?.nome ?? "Sem pasta";
+    return pastas.find((pasta) => pasta.id === id)?.nome ?? "Sem pasta";
   }
 
   function abrirMenu(musica: Musica) {
@@ -234,12 +328,20 @@ export default function MusicasScreen() {
   async function selecionarPasta(pastaId: string | null) {
     if (!musicaSelecionada) return;
 
-    await updateDoc(doc(db, "musicas", musicaSelecionada.id), {
-      pastaId,
-    });
+    try {
+      await updateDoc(doc(db, "musicas", musicaSelecionada.id), {
+        pastaId,
+      });
 
-    await loadData();
-    setMenuVisible(false);
+      await loadData();
+      setMenuVisible(false);
+    } catch (error) {
+      console.log("Erro ao selecionar pasta:", error);
+      alert.showAlert({
+        title: "Erro",
+        message: "Não foi possível atualizar a pasta da música.",
+      });
+    }
   }
 
   async function excluirMusica() {
@@ -254,16 +356,33 @@ export default function MusicasScreen() {
           text: "Excluir",
           style: "destructive",
           onPress: async () => {
-            await deleteDoc(doc(db, "musicas", musicaSelecionada.id));
-            await loadData();
-            setMenuVisible(false);
+            try {
+              await deleteDoc(doc(db, "musicas", musicaSelecionada.id));
+              await loadData();
+              setMenuVisible(false);
+            } catch (error) {
+              console.log("Erro ao excluir música:", error);
+              alert.showAlert({
+                title: "Erro",
+                message: "Não foi possível excluir a música.",
+              });
+            }
           },
         },
       ],
     });
   }
 
+  function handleMenuPress(event: GestureResponderEvent, musica: Musica) {
+    event.stopPropagation();
+    abrirMenu(musica);
+  }
+
   function renderItem({ item }: { item: Musica }) {
+    const metaInfo = [item.tom ? `Tom: ${item.tom}` : null, getNomeDaPasta(item.pastaId)]
+      .filter(Boolean)
+      .join(" • ");
+
     return (
       <Pressable
         style={styles.card}
@@ -278,19 +397,14 @@ export default function MusicasScreen() {
           <View style={styles.cardInfo}>
             <Text style={styles.title}>{item.titulo}</Text>
 
-            {!!item.artista && (
-              <Text style={styles.subtitle}>{item.artista}</Text>
-            )}
+            {!!item.artista && <Text style={styles.subtitle}>{item.artista}</Text>}
 
-            <Text style={styles.meta}>
-              {item.tom ? `Tom: ${item.tom}` : ""} •{" "}
-              {getNomeDaPasta(item.pastaId)}
-            </Text>
+            <Text style={styles.meta}>{metaInfo}</Text>
           </View>
 
           <Pressable
             style={styles.menuButton}
-            onPress={() => abrirMenu(item)}
+            onPress={(event) => handleMenuPress(event, item)}
           >
             <Ionicons name="menu" size={20} color={colors.textMuted} />
           </Pressable>
@@ -308,6 +422,8 @@ export default function MusicasScreen() {
           style={styles.searchInput}
           value={searchQuery}
           onChangeText={setSearchQuery}
+          returnKeyType="search"
+          onSubmitEditing={buscarMusica}
         />
         <Pressable
           style={[styles.searchButton, searchLoading && styles.buttonDisabled]}
@@ -321,7 +437,7 @@ export default function MusicasScreen() {
       </View>
 
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerTextContainer}>
           <Text style={styles.screenTitle}>Músicas</Text>
           <Text style={styles.screenSubtitle}>
             Toque em uma música para abrir a cifra
@@ -343,15 +459,16 @@ export default function MusicasScreen() {
           style={styles.filterInput}
           value={filterQuery}
           onChangeText={setFilterQuery}
+          returnKeyType="search"
         />
-        {filterQuery ? (
+        {!!filterQuery && (
           <Pressable
             style={styles.clearFilterButton}
             onPress={() => setFilterQuery("")}
           >
             <Ionicons name="close" size={16} color={colors.textMuted} />
           </Pressable>
-        ) : null}
+        )}
       </View>
 
       {loading ? (
@@ -359,12 +476,15 @@ export default function MusicasScreen() {
       ) : (
         <FlatList
           data={filteredMusicas}
-          keyExtractor={(i) => i.id}
+          keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              {filterQuery ? "Nenhuma música encontrada com este filtro." : "Nenhuma música cadastrada ainda."}
+              {filterQuery
+                ? "Nenhuma música encontrada com este filtro."
+                : "Nenhuma música cadastrada ainda."}
             </Text>
           }
         />
@@ -380,43 +500,36 @@ export default function MusicasScreen() {
           style={styles.overlay}
           onPress={() => setSearchModalVisible(false)}
         >
-          <Pressable style={styles.searchModal} onPress={() => {}}>
+          <Pressable style={styles.searchModal} onPress={() => undefined}>
             <View style={styles.sheetHandle} />
 
             <Text style={styles.modalTitle}>
-              {selectedArtist ? `Músicas de ${selectedArtist} (${searchResults.length} encontradas)` : "Resultado da busca"}
+              {selectedArtist
+                ? `Músicas de ${selectedArtist} (${searchResults.length} encontradas)`
+                : "Resultado da busca"}
             </Text>
 
             <FlatList
               data={searchResults}
-              keyExtractor={(item, index) => `${item.trackId || index}`}
+              keyExtractor={(item, index) => `${item.trackId ?? item.title}-${index}`}
               renderItem={({ item }) => (
                 <View style={styles.searchResultCard}>
                   <View style={styles.resultHeader}>
-                    <Text style={styles.resultTitle}>
-                      {item.title}
-                    </Text>
-                    <Text style={styles.resultArtist}>
-                      por {item.artist}
-                    </Text>
+                    <Text style={styles.resultTitle}>{item.title}</Text>
+                    <Text style={styles.resultArtist}>por {item.artist}</Text>
                   </View>
 
-                  {item.isSpecificSong && (
-                    <View style={styles.previewContainer}>
+                  <View style={styles.previewContainer}>
+                    {item.isSpecificSong && (
                       <Text style={styles.previewLabel}>Preview da letra:</Text>
-                      <Text style={styles.previewText} numberOfLines={4}>
-                        {item.preview}
-                      </Text>
-                    </View>
-                  )}
-
-                  {!item.isSpecificSong && (
-                    <View style={styles.previewContainer}>
-                      <Text style={styles.previewText}>
-                        {item.preview}
-                      </Text>
-                    </View>
-                  )}
+                    )}
+                    <Text
+                      style={styles.previewText}
+                      numberOfLines={item.isSpecificSong ? 4 : undefined}
+                    >
+                      {item.preview ?? "Sem preview disponível"}
+                    </Text>
+                  </View>
 
                   <View style={styles.resultActions}>
                     <Pressable
@@ -426,7 +539,10 @@ export default function MusicasScreen() {
                       <Text style={styles.cancelButtonText}>Cancelar</Text>
                     </Pressable>
                     <Pressable
-                      style={styles.addMusicButton}
+                      style={[
+                        styles.addMusicButton,
+                        searchLoading && styles.buttonDisabled,
+                      ]}
                       onPress={() => adicionarMusica(item)}
                       disabled={searchLoading}
                     >
@@ -439,6 +555,7 @@ export default function MusicasScreen() {
               )}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.modalListContent}
+              keyboardShouldPersistTaps="handled"
               initialNumToRender={20}
               maxToRenderPerBatch={20}
             />
@@ -453,7 +570,7 @@ export default function MusicasScreen() {
         onRequestClose={fecharMenu}
       >
         <Pressable style={styles.overlay} onPress={fecharMenu}>
-          <Pressable style={styles.bottomSheet} onPress={() => {}}>
+          <Pressable style={styles.bottomSheet} onPress={() => undefined}>
             <View style={styles.sheetHandle} />
 
             <Text style={styles.modalTitle}>{musicaSelecionada?.titulo}</Text>
@@ -477,10 +594,7 @@ export default function MusicasScreen() {
               return (
                 <Pressable
                   key={pasta.id}
-                  style={[
-                    styles.option,
-                    isSelected && styles.optionSelected,
-                  ]}
+                  style={[styles.option, isSelected && styles.optionSelected]}
                   onPress={() => selecionarPasta(pasta.id)}
                 >
                   <Text
@@ -513,6 +627,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
+    gap: 12,
+  },
+  headerTextContainer: {
+    flex: 1,
   },
   screenTitle: {
     fontSize: 22,
@@ -671,6 +789,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
   searchButtonText: {
     color: colors.white,
     fontSize: 14,
@@ -743,6 +864,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+  addMusicButton: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  addMusicButtonText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: "700",
+  },
   filterContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -755,6 +888,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 10,
     padding: 12,
+    paddingRight: 40,
     color: colors.text,
     fontSize: 14,
   },

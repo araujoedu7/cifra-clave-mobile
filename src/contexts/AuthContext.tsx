@@ -14,7 +14,16 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
 import { auth, db } from "@/src/firebase/config";
 import type { AppUser, UserRole } from "@/src/types";
 
@@ -74,24 +83,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await signInWithEmailAndPassword(auth, email.trim(), senha);
   }
 
+  async function getRoleForNewUser(): Promise<UserRole> {
+    const usersRef = collection(db, "users");
+    const firstUserQuery = query(usersRef, limit(1));
+    const snapshot = await getDocs(firstUserQuery);
+
+    return snapshot.empty ? "owner" : "viewer";
+  }
+
   async function signUp({ nome, email, senha }: SignUpData) {
+    const nomeLimpo = nome.trim();
+    const emailLimpo = email.trim().toLowerCase();
+
+    const role = await getRoleForNewUser();
+
     const userCredential = await createUserWithEmailAndPassword(
       auth,
-      email.trim(),
+      emailLimpo,
       senha
     );
 
-    if (nome.trim()) {
+    if (nomeLimpo) {
       await updateProfile(userCredential.user, {
-        displayName: nome.trim(),
+        displayName: nomeLimpo,
       });
     }
 
     await createOwnerIfNeeded({
       uid: userCredential.user.uid,
-      nome: nome.trim(),
-      email: email.trim(),
-      role: "owner",
+      nome: nomeLimpo,
+      email: emailLimpo,
+      role,
     });
 
     await loadUserProfile(userCredential.user.uid);
@@ -115,7 +137,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         uid: data.uid,
         nome: data.nome,
         email: data.email,
-        role: data.role ?? "owner",
+        role: data.role ?? "viewer",
         createdAt: serverTimestamp(),
       });
       return;
@@ -127,7 +149,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await setDoc(
         ref,
         {
-          role: data.role ?? "owner",
+          role: data.role ?? "viewer",
         },
         { merge: true }
       );

@@ -6,9 +6,13 @@ import {
   StyleSheet,
   Text,
   View,
+  Alert,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
 import { db } from "@/src/firebase/config";
@@ -22,6 +26,7 @@ type Musica = {
 };
 
 const TOMS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
 const BEMOIS_PARA_SUSTENIDOS: Record<string, string> = {
   Db: "C#",
   Eb: "D#",
@@ -55,14 +60,139 @@ function transposeChord(chord: string, steps: number) {
 function transporCifra(texto: string, steps: number) {
   if (!texto.trim() || steps === 0) return texto;
 
-  return texto.replace(/\b([A-G](?:#|b)?(?:m|maj7|maj9|maj|sus2|sus4|sus|dim|aug|add9|add11|m7|m9|m11|m6|7|9|11|13|6)?(?:\/[A-G](?:#|b)?)?)\b/g, (match) => {
-    if (match.includes("/")) {
-      const [principal, baixo] = match.split("/");
-      return `${transposeChord(principal, steps)}/${transposeChord(baixo, steps)}`;
-    }
+  return texto.replace(
+    /\b([A-G](?:#|b)?(?:m|maj7|maj9|maj|sus2|sus4|sus|dim|aug|add9|add11|m7|m9|m11|m6|7|9|11|13|6)?(?:\/[A-G](?:#|b)?)?)\b/g,
+    (match) => {
+      if (match.includes("/")) {
+        const [principal, baixo] = match.split("/");
+        return `${transposeChord(principal, steps)}/${transposeChord(
+          baixo,
+          steps
+        )}`;
+      }
 
-    return transposeChord(match, steps);
-  });
+      return transposeChord(match, steps);
+    }
+  );
+}
+
+function escapeHtml(texto: string) {
+  return texto
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function montarHtmlImpressao(params: {
+  titulo: string;
+  artista?: string;
+  tom?: string;
+  cifra: string;
+  fontSize: number;
+}) {
+  const titulo = escapeHtml(params.titulo || "Sem título");
+  const artista = escapeHtml(params.artista || "");
+  const tom = escapeHtml(params.tom || "");
+  const cifra = escapeHtml(params.cifra || "Sem cifra cadastrada.");
+  const fontSize = Math.max(params.fontSize - 2, 12);
+
+  return `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8" />
+        <title>${titulo}</title>
+        <style>
+          @page {
+            size: A4;
+            margin: 16mm 12mm;
+          }
+
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          html, body {
+            margin: 0;
+            padding: 0;
+            background: #0f172a;
+            color: #f8fafc;
+            font-family: "Courier New", Courier, monospace;
+          }
+
+          body {
+            padding: 0;
+          }
+
+          .sheet {
+            width: 100%;
+            min-height: 100%;
+            background: #0f172a;
+            color: #f8fafc;
+          }
+
+          .header {
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid #334155;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+
+          .title {
+            margin: 0 0 8px 0;
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1.3;
+            color: #f8fafc;
+          }
+
+          .meta {
+            margin: 0;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #cbd5e1;
+          }
+
+          .meta strong {
+            color: #93c5fd;
+          }
+
+          .cifra {
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow: visible;
+            font-size: ${fontSize}px;
+            line-height: 1.65;
+            color: #f8fafc;
+            margin: 0;
+          }
+        </style>
+      </head>
+      <body>
+        <main class="sheet">
+          <section class="header">
+            <h1 class="title">${titulo}</h1>
+            ${
+              artista || tom
+                ? `
+                  <p class="meta">
+                    ${artista ? `<strong>Artista:</strong> ${artista}` : ""}
+                    ${artista && tom ? " &nbsp;&nbsp;•&nbsp;&nbsp; " : ""}
+                    ${tom ? `<strong>Tom:</strong> ${tom}` : ""}
+                  </p>
+                `
+                : ""
+            }
+          </section>
+
+          <pre class="cifra">${cifra}</pre>
+        </main>
+      </body>
+    </html>
+  `;
 }
 
 export default function MusicaDetalheScreen() {
@@ -74,6 +204,7 @@ export default function MusicaDetalheScreen() {
   const [transposition, setTransposition] = useState(0);
   const [autoScrollAtivo, setAutoScrollAtivo] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
+  const [printing, setPrinting] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   const currentOffsetRef = useRef(0);
@@ -160,6 +291,54 @@ export default function MusicaDetalheScreen() {
     return TOMS[novoIndex];
   }, [musica?.tom, transposition]);
 
+  async function imprimirCifra() {
+    if (!musica) return;
+
+    try {
+      setPrinting(true);
+
+      const html = montarHtmlImpressao({
+        titulo: musica.titulo,
+        artista: musica.artista,
+        tom: tomExibido,
+        cifra: cifraTransposta || "Sem cifra cadastrada.",
+        fontSize,
+      });
+
+      if (Platform.OS === "web") {
+        await Print.printAsync({
+          html,
+        });
+        return;
+      }
+
+      const { uri } = await Print.printToFileAsync({
+        html,
+      });
+
+      const sharingDisponivel = await Sharing.isAvailableAsync();
+
+      if (!sharingDisponivel) {
+        Alert.alert(
+          "PDF gerado",
+          "O PDF foi criado, mas o compartilhamento não está disponível neste dispositivo."
+        );
+        return;
+      }
+
+      await Sharing.shareAsync(uri, {
+        mimeType: "application/pdf",
+        dialogTitle: "Cifra em PDF",
+        UTI: ".pdf",
+      });
+    } catch (error) {
+      console.log("Erro ao gerar PDF:", error);
+      Alert.alert("Erro", "Não foi possível gerar o PDF da cifra.");
+    } finally {
+      setPrinting(false);
+    }
+  }
+
   function aumentarFonte() {
     setFontSize((prev) => Math.min(prev + 2, 32));
   }
@@ -219,6 +398,21 @@ export default function MusicaDetalheScreen() {
             {!!musica.tom && (
               <Text style={styles.tom}>Tom atual: {tomExibido}</Text>
             )}
+          </View>
+
+          <View style={styles.printRow}>
+            <Pressable
+              style={[
+                styles.printButton,
+                printing && styles.printButtonDisabled,
+              ]}
+              onPress={imprimirCifra}
+              disabled={printing}
+            >
+              <Text style={styles.printButtonText}>
+                {printing ? "Gerando PDF..." : "Imprimir / PDF"}
+              </Text>
+            </Pressable>
           </View>
 
           <View style={styles.panel}>
@@ -327,6 +521,24 @@ const styles = StyleSheet.create({
   },
   tom: {
     color: colors.primary,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  printRow: {
+    marginBottom: 12,
+  },
+  printButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  printButtonDisabled: {
+    opacity: 0.7,
+  },
+  printButtonText: {
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
   },

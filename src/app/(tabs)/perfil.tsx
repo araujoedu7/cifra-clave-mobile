@@ -1,4 +1,5 @@
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
 import ScreenContainer from "@/src/components/ScreenContainer";
 import { colors } from "@/src/constants/colors";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -9,6 +10,7 @@ export default function PerfilScreen() {
   async function handleLogout() {
     try {
       await logout();
+      router.replace("/login");
     } catch {
       Alert.alert("Erro", "Não foi possível sair da conta.");
     }
@@ -26,7 +28,7 @@ export default function PerfilScreen() {
           <View style={styles.infoGroup}>
             <Text style={styles.label}>Nome</Text>
             <Text style={styles.value}>
-              {appUser?.name?.trim() || "Não informado"}
+              {appUser?.nome?.trim() || "Não informado"}
             </Text>
           </View>
 
@@ -47,8 +49,8 @@ export default function PerfilScreen() {
               {appUser?.role === "owner"
                 ? "Administrador principal"
                 : appUser?.role === "admin"
-                ? "Administrador"
-                : "Visualizador"}
+                  ? "Administrador"
+                  : "Visualizador"}
             </Text>
           </View>
         </View>
@@ -76,7 +78,7 @@ const styles = StyleSheet.create({
 
   subtitle: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: colors.textMuted,
     marginBottom: 20,
   },
 
@@ -85,6 +87,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 
   infoGroup: {
@@ -93,7 +97,7 @@ const styles = StyleSheet.create({
 
   label: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: colors.textMuted,
     marginBottom: 4,
   },
 
@@ -110,7 +114,7 @@ const styles = StyleSheet.create({
   },
 
   logoutButton: {
-    backgroundColor: colors.error,
+    backgroundColor: "#DC2626",
     padding: 14,
     borderRadius: 10,
     alignItems: "center",
